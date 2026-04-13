@@ -1,0 +1,28 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: followhub_app
+    ports:
+      - 8000:8000
+    volumes:
+      - .:/var/www
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    container_name: followhub_db
+    restart: always
+    environment:
+      POSTGRES_DB: followhub
+      POSTGRES_USER: followhub
+      POSTGRES_PASSWORD: followhub
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  db_data:
