@@ -7,26 +7,12 @@ use App\Models\User;
 
 class FollowService
 {
+    // follow / unfollow
     public function toggleFollow(User $user)
     {
         $me = auth()->user();
         if ($user->id === $me->id) {
             return ['message' => 'You cannot follow yourself.', 'status' => 400];
-        }
-
-
-        if ($user->Blocked($me)) {
-            return [
-                'message' => "You have been blocked by $user->username you cannot follow, until $user->username unblock you.",
-                'status' => 403
-            ];
-        }
-
-        if ($user->isBlocked($me)) {
-            return [
-                "message" => "You have blocked $user->username, unblock to follow",
-                'status' => 403
-            ];
         }
 
         $follow = Follow::where('follower_id', $me->id)
@@ -60,6 +46,7 @@ class FollowService
         return ["message" => $msg, "status" => 201];
     }
 
+    // accept follow request
     public function acceptRequest(User $user)
     {
         $me = auth()->user();
@@ -83,6 +70,7 @@ class FollowService
         ];
     }
 
+    // reject follow request
     public function rejectRequest(User $user)
     {
         $me = auth()->user();

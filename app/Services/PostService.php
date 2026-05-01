@@ -4,9 +4,9 @@ namespace App\Services;
 
 use App\Models\Post;
 use App\Models\PostMedia;
+use App\Models\PostView;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
-use PhpParser\Node\Expr\PostInc;
 
 class PostService
 {
@@ -49,31 +49,38 @@ class PostService
     }
 
     // get all posts
-    public function getMyPosts($perPage = 10)
+    public function getMyPosts()
     {
-        $user = auth()->user();
+        $me = auth()->user();
 
-        return $user->posts()
+        $posts = $me->posts()
             ->with('media', 'user')
             ->latest()
-            ->paginate($perPage);
+            ->paginate(10);
+        if ($posts->isEmpty()) {
+            return [
+                "user" => $me->only('id', 'name', 'username'),
+                "message" => "Sizda hali post mavjud emas",
+            ];
+        }
+        return $posts;
     }
 
     // get post by id
     public function myPost(int $id)
     {
-        $post = Auth::user()->posts()
+        $me = Auth::user();
+        $post = $me->posts()
             ->with(['user', 'media'])
             ->withCount('likes', 'comments')
             ->find($id);
 
-        if (!$post) {
-            return response()->json([
-                "message" => "Post topilmadi yoki sizga tegishli emas."
-            ], 404);
-        }
+        PostView::firstOrCreate([
+            'post_id' => $post->id,
+            'user_id' => $me->id
+        ]);
 
-        return $post;
+        return $post->loadCount('likes', 'views', 'comments')->load('user', 'media');
     }
 
     // update post
@@ -138,30 +145,30 @@ class PostService
     // delete post
     public function postDelete(int $post_id)
     {
-        $post = Post::where('id', $post_id)
-            ->where('user_id', auth()->id())
-            ->first();
-
-        $message = null;
+        $post = Post::find($post_id);
 
         if (!$post) {
-            return response()->json([
-                "message" => 'Post topilmadi yoki bu post sizga tegishli emas!'
-            ], 403);
+            return [
+                "status" => 404,
+                "message" => 'Post mavjud emas!'
+            ];
+        }
+
+        if ($post->user_id !== auth()->id()) {
+            return [
+                "status" => 403,
+                "message" => "Bu post sizga tegishli emas!"
+            ];
         }
 
         $folderPath = "posts/user_" . $post->user_id . "/post_" . $post->id;
-
         if (Storage::disk('public')->exists($folderPath)) {
             Storage::disk('public')->deleteDirectory($folderPath);
         }
 
         if ($post->delete()) {
-            $message = 'Post muvaffaqiyatli o\'chirildi.';
-        } else {
-            $message = 'O\'chirishda muammo';
+            return ["status" => 200, "message" => "Post muvaffaqiyatli o'chirildi."];
         }
-
-        return response()->json([$message]);
+        return ["status" => 500, "message" => "O'chirishda kutilmagan muammo yuz berdi."];
     }
 }

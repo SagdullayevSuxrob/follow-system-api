@@ -1,18 +1,18 @@
 <?php
 
-namespace App\Http\Requests\Comments;
+namespace App\Http\Requests;
 
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-class StoreCommentRequest extends FormRequest
+class UpdateCommentRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
      */
     public function authorize(): bool
     {
-        return auth()->check();
+        return true;
     }
 
     /**
@@ -23,16 +23,7 @@ class StoreCommentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'content' => 'required|string|max:1000',
-            'parent_id' => 'nullable|exists:comments,id'
-        ];
-    }
-
-    public function messages()
-    {
-        return [
-            'content.required' => "Izoh matni bo'sh bo'lmasligi kerak.",
-            'parent_id.exists' => "Javob berilayotgan izoh topilmadi."
+            'content' => "required|string|max:1000"
         ];
     }
 }

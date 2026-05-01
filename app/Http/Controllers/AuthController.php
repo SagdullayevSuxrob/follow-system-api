@@ -11,12 +11,7 @@ use Illuminate\Support\Facades\Auth;
 
 class AuthController extends Controller
 {
-    private $authService;
-
-    public function __construct(AuthService $authService)
-    {
-        $this->authService = $authService;
-    }
+    public function __construct(private AuthService $authService) {}
 
     // Register a new user
     public function register(UserRegisterRequest $request)

@@ -2,81 +2,25 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Like;
 use App\Models\User;
-use Illuminate\Http\Request;
+use App\Services\BlockService;
 
 class BlockController extends Controller
 {
-    // Blocklash
-    public function block(Request $request, User $user)
+    public function __construct(private BlockService $blockService) {}
+    /**
+     * toggleBlock - block and unblock 
+     */
+    public function toggleBlock(User $user)
     {
-        $me = $request->user();
-
-        if ($user->isBlocked($request->user())) {
-            return response()->json(['message' => 'You have already blocked this user.'], 400);
-        }
-
-        $userToBlock = User::findOrFail($user->id);
-
-        if ($me->id == $userToBlock->id) {
-            return response()->json(['message' => 'You cannot block yourself.'], 400);
-        }
-        // bloklash
-        $me->blockedUsers()->syncWithoutDetaching([$userToBlock->id]);
-
-        // foydalanuvchini kuzatishni(follow->unfollow) to'xtatish
-        $me->following()->detach($userToBlock->id);
-
-        // foydalanuvchini kuzatishini to'xtatish
-        $me->followers()->detach($userToBlock->id);
-
-        // men bosgan like larni o'chirish
-        Like::where('user_id', $me->id)
-            ->whereIn('post_id', $user->posts()->pluck('id'))
-            ->delete();
-
-        // meni postimga bosgan likelarini o'chirish
-        Like::where('user_id', $user->id)
-            ->whereIn('post_id', $me->posts()->pluck('id'))
-            ->delete();
-
-        return response()->json([
-            'message' => "You blocked the $userToBlock->name [@$userToBlock->username] successfully."
-        ]);
+        return $this->blockService->toggleBlock($user);
     }
 
-    // Blockdan chiqarish
-    public function unblock(Request $request, User $user)
+    /**
+     * Blocklanganlar ro'yhati
+     */
+    public function blockedList()
     {
-        $me = $request->user();
-
-        if (!$user->isBlocked($me)) {
-            return response()->json(['message' => 'This user is not blocked.'], 400);
-        }
-        // blokdan chiqarish
-        $me->blockedUsers()->detach($user->id);
-
-        return response()->json([
-            'message' => "You unblocked the $user->name [@$user->username] successfully."
-        ]);
-    }
-
-    // Blocklanganlar ro'yxati
-    public function blockedList(Request $request)
-    {
-        $me = $request->user();
-        $blockedUsers = $me->blockedUsers()
-            ->select(['users.id', 'users.name', 'users.username'])
-            ->get();
-
-        if ($blockedUsers->isEmpty()) {
-            return response()->json([
-                'message' => 'You have no blocked users.'
-            ]);
-        }
-        return response()->json([
-            'blocked users list' => $blockedUsers
-        ]);
+        return $this->blockService->blockedList();
     }
 }

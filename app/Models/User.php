@@ -66,20 +66,22 @@ class User extends Authenticatable
     // Check if the user is following another user
     public function isFollowing(User $user)
     {
+        $me = auth()->user();
         return $this->following()
             ->wherePivot('status', 'accepted')
+            ->where('follower_id', $me->id)
             ->where('following_id', $user->id)
             ->exists();
     }
 
     // Get follow status.
-    public function getFollowStatus(User $user, $me)
+    public function getFollowStatus(User $user, User $me)
     {
         if (!$me) return 'You are not logged in'; // Agar foydalanuvchi tizimga kirmagan bo'lsa
         if ($user->id === $me->id) return 'self';
 
         if ($me->blockedUsers()->where('blocked_id', $user->id)->exists()) return "unblock";
-        if ($me->blockedBy()->where('blocker_id', $user->id)->exists()) return "blocked by user";
+        if ($me->blockers()->where('blocker_id', $user->id)->exists()) return "blocked by user";
 
         $followRecord = $me->following()->withPivot('status')->where('following_id', $user->id)->first();
         $followerRecord = $me->followers()->withPivot('status')->where('follower_id', $user->id)->first();
@@ -119,40 +121,38 @@ class User extends Authenticatable
         return false;
     }
 
+    // men bloklaganlar
     public function blockedUsers()
     {
         return $this->belongsToMany(User::class, 'blocks', 'blocker_id', 'blocked_id');
     }
 
-    public function blockedBy()
+    // meni bloklaganlar
+    public function blockers()
     {
         return $this->belongsToMany(User::class, 'blocks', 'blocked_id', 'blocker_id');
     }
 
-    public function Blocked(User $me)
+    // men user ni bloklaganman
+    public function isBlockedByMe(User $user)
     {
-        if ($this->blockedUsers()->where('blocked_id', $me->id)->exists()) {
-            return true;
-        }
-        return false;
+        return $this->blockedUsers()->where('blocked_id', $user->id)->exists();
     }
 
-    public function isBlocked(User $me)
+    // user meni bloklagan
+    public function hasBlockedMe(User $user)
     {
-        if ($this->blockedBy()->where('blocker_id', $me->id)->exists()) {
-            return true;
-        }
-        return false;
+        return $this->blockers()->where('blocker_id', $user->id)->exists();
     }
 
-    public function block($userId)
+    public function block(int $userId)
     {
         return $this->blockedUsers()->attach([$userId]);
     }
 
-    public function unblock(User $user)
+    public function unblock(int $userId)
     {
-        return $this->blockedUsers()->detach($user->id);
+        return $this->blockedUsers()->detach($userId);
     }
 
     public function posts()
@@ -170,7 +170,7 @@ class User extends Authenticatable
         return $this->hasMany(PostView::class);
     }
 
-    public function like()
+    public function likes()
     {
         return $this->hasMany(Like::class);
     }

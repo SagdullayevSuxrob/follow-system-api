@@ -35,6 +35,8 @@ class PostResource extends JsonResource
             'stats' => [
                 "likes" => $this->likes()->count(),
                 'is_liked' => $request->user() ? $this->likes()->where('user_id', $request->user()->id)->exists() : false,
+                'comment_count' => $this->comments_count ?? 0,
+                'views_count' => $this->views_count ?? 0,
             ],
         ];
     }

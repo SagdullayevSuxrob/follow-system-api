@@ -7,23 +7,17 @@ use App\Http\Resources\UserResource;
 use App\Models\Post;
 use App\Models\User;
 use App\Services\UserService;
-use Illuminate\Http\Request;
 
 class UserController extends Controller
 {
-    private $userService;
-
-    public function __construct(UserService $userService)
-    {
-        $this->userService = $userService;
-    }
+    public function __construct(private UserService $userService) {}
 
     // get User Profile
     public function userProfile(User $user)
     {
         $result = $this->userService->userProfile($user);
 
-        if (isset($result['error'])) {
+        if ($result['code'] !== 200) {
             return response()->json(["message" => $result['error']], $result['code']);
         }
         return response()->json([$result['success']], $result['code']);
@@ -32,35 +26,23 @@ class UserController extends Controller
     // get Users Posts
     public function postsAll(User $user)
     {
-        $me = auth()->user();
-        $accessError = $this->userService->checkAccess($me, $user);
-        if ($accessError) return $accessError;
+        $result =  $this->userService->getAllPosts($user);
 
-        $posts = $user->posts()
-            ->with(['user', 'media'])
-            ->latest()
-            ->paginate(10);
-
-        if ($posts->isEmpty()) {
-            return response()->json([
-                "user" => $user->username,
-                "message" => "Bu foydalanuvchida hali post mavjud emas",
-            ]);
+        if ($result['message']) {
+            return response()->json($result, 403);
         }
 
-        return PostResource::collection($posts);
+        return PostResource::collection($result);
     }
 
     // Bitta postni olish
     public function post(User $user, Post $post)
     {
-        $me = auth()->user();
-        $accessError = $this->userService->checkAccess($me, $user);
-        if ($accessError) return $accessError;
-
-        // Post foydalanuvchiga tegishliligini tekshirish
-        if ($post->user_id !== $user->id) {
-            return response()->json(["message" => "Post topilmadi yoki bu foydalanuvchiga tegishli emas."], 404);
+        $result = $this->userService->getPostById($user, $post);
+        if (is_array($result) && isset($result['error'])) {
+            return response()->json([
+                "message" => $result['message']
+            ], $result['status']);
         }
 
         return new PostResource($post->load('user', 'media'));

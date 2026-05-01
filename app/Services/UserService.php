@@ -2,85 +2,18 @@
 
 namespace App\Services;
 
+use App\Models\Post;
+use App\Models\PostView;
 use App\Models\User;
 
 class UserService
 {
-    /**
-     * Foydalanuvchi profiliga kirish huquqini tekshirish
-     */
-    public function checkAccess($me, $user)
+    // get follow suggestion
+    private function getSuggestion(User $me, User $user)
     {
-        $me = auth()->user();
-        if ($user->Blocked($me)) {
-            return response()->json(["message" => "Siz bu hisob tomonidan bloklangansiz."], 403);
-        }
-
-        // 2. Men uni bloklaganmanmi?
-        if ($user->isBlocked($me)) {
-            return response()->json(["message" => "Siz bu foydalanuvchini bloklagansiz, blokdan chiqaring."], 403);
-        }
-
-        // 3. Private profil va obuna tekshiruvi
-        if ($user->type === 'private' && $me->id !== $user->id && !$me->isFollowing($user)) {
-            return response()->json([
-                "user" => $user->username,
-                "message" => "Bu hisob shaxsiy, obuna bo'lishingiz kerak."
-            ], 403);
-        }
-
-        return null;
-    }
-
-    // show user profile
-    public function userProfile($user)
-    {
-        $me = auth()->user();
-
-        // Bu foydalanuvchi meni bloklagan
-        if ($user->Blocked($me)) {
-            return [
-                "error" => "Siz bu foydalanuvchi tomonidan bloklangansiz.",
-                'code' => 403
-            ];
-        }
-
-        // Men bu foydalanuvchini bloklaganman
-        if ($user->isBlocked($me)) {
-            return [
-                "error" => "Siz bu foydalanuvchini bloklagansiz, uning profilini ko'rish uchun avval blokdan chiqaring!",
-                'code' => 403
-            ];
-        }
-
-        $user->loadCount(['posts', 'followers', 'following', 'friends']);
-
-        // Get user statistics
-        $stats = [
-            "Posts" => $user->posts_count,
-            "Followers" => $user->followers_count,
-            "Following" => $user->following_count,
-            "Friends" => $user->friends_count
-        ];
-
-        // Bu foydalanuvchi akkaunti shaxsiymi?
-        if ($user->isPrivate($me)) {
-            return [
-                'error' => [
-                    "User" => $user->only(['username', 'name']),
-                    "status" => $me->getFollowStatus($user, $me),
-                    "statistics" => $stats,
-                    'message' => 'This account is private',
-                ],
-                'code' => 200,
-            ];
-        }
-
-        // Get user suggestions
-
         // 1. Bloklanganlarni yig'amiz
         $blockedIds = $me->blockedUsers()->pluck('blocked_id')
-            ->merge($me->blockedBy()->pluck('blocker_id'))
+            ->merge($me->blockers()->pluck('blocker_id'))
             ->unique();
 
         $excludeIds = $me->following()->pluck('following_id')
@@ -117,40 +50,101 @@ class UserService
 
                 $suggestions = $suggestions->merge($globalSuggestions);
             }
+            return $suggestions;
         }
+    }
 
+    // show user profile
+    public function userProfile(User $user)
+    {
+        $me = auth()->user();
+
+        $user->loadCount(['posts', 'followers', 'following']);
+
+        $friendsCount = $user->friends()->count();
+        // Get user statistics
+        $stats = [
+            "Posts" => $user->posts_count ?? 0,
+            "Followers" => $user->followers_count ?? 0,
+            "Following" => $user->following_count ?? 0,
+            "Friends" => $friendsCount
+        ];
+
+        // Bu foydalanuvchi akkaunti shaxsiymi?
+        if ($user->isPrivate($me)) {
+            return [
+                'error' => [
+                    "User" => $user->only(['username', 'name']),
+                    "status" => $me->getFollowStatus($user, $me),
+                    "statistics" => $stats,
+                    'message' => 'Bu hisob shaxsiy.',
+                ],
+                'code' => 403,
+            ];
+        }
         return [
             'success' => [
                 "User" => $user->only(['username', 'name', 'email']),
                 'statistics' => $stats,
                 "status" => $me->getFollowStatus($user, $me),
-                "suggestions" => $suggestions,
+                "suggestions" => $this->getSuggestion($user, $me),
             ],
             'code' => 200
         ];
     }
 
-    // get followers
-    public function getFollowers($user)
+    // get all posts of user 
+    public function getAllPosts(User $user)
     {
         $me = auth()->user();
 
-        // Bu foydalanuvchi meni bloklagan
-        if ($user->Blocked($me)) {
+        $posts = $user->posts()
+            ->with(['media'])
+            ->latest()
+            ->paginate(10);
+
+        if ($user->isPrivate($me)) {
+            return ['message' => 'Bu hisob shaxsiy'];
+        }
+
+        if ($posts->isEmpty()) {
             return [
-                "error" => "Siz bu foydalanuvchi tomonidan bloklangansiz.",
-                'code' => 403
+                "user" => $user->only('id', 'name', 'username'),
+                "message" => "Bu foydalanuvchida hali post mavjud emas",
             ];
         }
 
-        // Men bu foydalanuvchini bloklaganman. 
-        if ($user->isBlocked($me)) {
-            return [
-                "error" => "Siz bu foydalanuvchini bloklagansiz, uning obunachilarini ko'rish uchun avval blokdan chiqaring",
-                'code' => 403
-            ];
+        return $posts;
+    }
+
+    // get a post of user
+    public function getPostById(User $user, Post $post)
+    {
+        $me = auth()->user();
+        if ($user->isPrivate($me)) {
+            return ["error" => true, "status" => 403, 'message' => 'Bu hisob shaxsiy'];
         }
 
+        if (!$post) {
+            return ["error" => true, "status" => 404, "message" => "Post mavjud emas!"];
+        }
+
+        if ($post->user_id !== $user->id) {
+            return ["error" => true, "status" => 403, "message" => "Post bu foydalanuvchiga tegishli emas."];
+        }
+
+        PostView::firstOrCreate([
+            'post_id' => $post->id,
+            'user_id' => $me->id
+        ]);
+
+        return $post->loadCount('likes', 'views', 'comments')->load('user', 'media');
+    }
+
+    // get followers
+    public function getFollowers(User $user)
+    {
+        $me = auth()->user();
         // Bu foydalanuvchi profili shaxsiy
         if ($user->isPrivate($me)) {
             return [
@@ -163,40 +157,19 @@ class UserService
             ];
         }
 
-        $followers = $user->followers()->paginate(20);
-
         return [
             'data' => [
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                ],
-                'followers' => $followers,
+                'user' => $user->only('id', 'name'),
+                'followers' => $user->followers()->paginate(10),
             ],
             'code' => 200
         ];
     }
 
     // get following
-    public function getFollowing($user)
+    public function getFollowing(User $user)
     {
         $me = auth()->user();
-
-        // Bu foydalanuvchi meni bloklagan
-        if ($user->Blocked($me)) {
-            return [
-                "error" => "Siz bu foydalanuvchi tomonidan bloklangansiz.",
-                'code' => 403
-            ];
-        }
-
-        // Men bu foydalanuvchini bloklaganman. 
-        if ($user->isBlocked($me)) {
-            return [
-                "error" => "Siz bu foydalanuvchini bloklagansiz, uning obunachilarini ko'rish uchun avval blokdan chiqaring",
-                'code' => 403
-            ];
-        }
 
         // Bu foydalanuvchi profili shaxsiy
         if ($user->isPrivate($me)) {
@@ -210,40 +183,19 @@ class UserService
             ];
         }
 
-        $following = $user->following()->paginate(20);
-
         return [
             'data' => [
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                ],
-                'following' => $following,
+                'user' => $user->only('id', 'name'),
+                'following' => $user->following()->paginate(10),
             ],
             'code' => 200,
         ];
     }
 
     // get friends
-    public function getFriends($user)
+    public function getFriends(User $user)
     {
         $me = auth()->user();
-
-        // Bu foydalanuvchi meni bloklagan
-        if ($user->Blocked($me)) {
-            return [
-                "error" => "Siz bu foydalanuvchi tomonidan bloklangansiz.",
-                'code' => 403
-            ];
-        }
-
-        // Men bu foydalanuvchini bloklaganman. 
-        if ($user->isBlocked($me)) {
-            return [
-                "error" => "Siz bu foydalanuvchini bloklagansiz, uning obunachilarini ko'rish uchun avval blokdan chiqaring",
-                'code' => 403
-            ];
-        }
 
         // Bu foydalanuvchi profili shaxsiy
         if ($user->isPrivate($me)) {
@@ -257,15 +209,10 @@ class UserService
             ];
         }
 
-        $friends = $user->friends()->paginate(20);
-
         return [
             'data' => [
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                ],
-                'friends' => $friends,
+                'user' => $user->only('id', 'name'),
+                "friends" => $user->friends()->paginate(10),
             ],
             'code' => 200
         ];

@@ -2,24 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\PostDeleteRequest;
 use App\Http\Requests\Posts\PostStoreRequest;
 use App\Http\Requests\Posts\PostUpdateRequest;
 use App\Http\Resources\PostResource;
 use App\Models\Post;
-use App\Models\PostMedia;
 use App\Services\PostService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class PostController extends Controller
 {
-    private $postService;
-
-    public function __construct(PostService $postService)
-    {
-        $this->postService = $postService;
-    }
+    public function __construct(private PostService $postService) {}
     // Post Create
     public function store(PostStoreRequest $request)
     {
@@ -34,17 +25,25 @@ class PostController extends Controller
     // All Posts of me
     public function index()
     {
-        $posts = $this->postService->getMyPosts(10);
+        $result = $this->postService->getMyPosts();
 
-        return PostResource::collection($posts)->additional([
-            "user" => auth()->user()->only('id', 'name', 'username')
-        ]);
+        if ($result['message']) {
+            return response()->json($result, 403);
+        }
+
+        return PostResource::collection($result);
     }
 
     // Show Single Post
-    public function show($id)
+    public function show(int $id)
     {
         $post = $this->postService->myPost($id);
+
+        if (!$post) {
+            return response()->json([
+                "message" => "Post topilmadi yoki sizga tegishli emas."
+            ], 403);
+        }
 
         return new PostResource($post);
     }
@@ -63,8 +62,10 @@ class PostController extends Controller
     // Delete Post
     public function destroy(int $post_id)
     {
-        $response = $this->postService->postDelete($post_id);
+        $result = $this->postService->postDelete($post_id);
 
-        return $response;
+        return response()->json([
+            "message" => $result['message'],
+        ], $result['status']);
     }
 }
